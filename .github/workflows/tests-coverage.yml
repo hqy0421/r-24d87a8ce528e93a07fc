@@ -1,0 +1,85 @@
+name: coverage
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements_dev.txt
+          pip install coverage-badge
+
+      - name: Run tests and generate coverage report
+        run: pytest --cov=deel/puncc --cov-report=xml
+
+      - name: Generate coverage badge
+        run: coverage-badge -f -o /tmp/coverage.svg
+
+      - name: Checkout badges branch
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ref: badges
+          path: .badges-branch
+          fetch-depth: 0
+
+      - name: Validate badge directories on badges branch
+        if: github.event_name == 'push'
+        run: |
+          test -d .badges-branch/.github/badges
+          test -d ".badges-branch/.github/badges/${GITHUB_REF_NAME}"
+
+      - name: Place badge on badges branch for main
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        run: |
+          cp /tmp/coverage.svg .badges-branch/.github/badges/main/coverage.svg
+          cp /tmp/coverage.svg .badges-branch/.github/badges/coverage.svg
+
+      - name: Place badge on badges branch for non-main branches
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          cp /tmp/coverage.svg ".badges-branch/.github/badges/${GITHUB_REF_NAME}/coverage.svg"
+
+      - name: Commit coverage badge on badges branch for main
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: .badges-branch
+          branch: badges
+          commit_message: "Update coverage badge"
+          file_pattern: .github/badges/main/coverage.svg .github/badges/coverage.svg
+
+      - name: Commit coverage badge on badges branch for non-main branches
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: .badges-branch
+          branch: badges
+          commit_message: "Update coverage badge"
+          file_pattern: .github/badges/${{ github.ref_name }}/coverage.svg

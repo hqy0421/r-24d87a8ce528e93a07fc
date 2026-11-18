@@ -1,0 +1,17 @@
+flake8
+jax==0.4.30
+numpy<2.0.0
+pandas
+pylint
+pytest
+pytest-cov
+black
+pre-commit
+sphinx
+sphinx-rtd-theme
+sphinx-autodoc-typehints
+sphinxcontrib-bibtex
+tensorflow == 2.11.0
+scikit-learn>=1.5.0
+torch
+tox
