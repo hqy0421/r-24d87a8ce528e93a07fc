@@ -4,6 +4,15 @@ This file documents main changes across releases of **PUNCC**.
 
 ---
 
+## [Unreleased]
+
+### Added
+- Added `deel.puncc.api.corrections.optimal_bonferroni_allocation`: exact nominal Bonferroni budget allocation across multiple regression outputs. Per-output miscoverage levels are chosen on the grid `k/(n+1)` under a total budget, minimizing the business-weighted sum of interval widths computed from exact-rank quantiles of the unweighted calibration absolute residuals (with an infinite score appended). Raises a clear error when the budget cannot make all output intervals finite
+- Added `deel.puncc.api.corrections.fixed_allocation`: correction builder that freezes a precomputed per-output alpha allocation so it can drive calibrators and conformal predictors in place of an equal-split correction
+- Added `BaseCalibrator.compute_optimal_bonferroni_allocation` and `BaseCalibrator.calibrate_optimal_bonferroni` to compute the optimal allocation from the fitted residuals and produce prediction intervals for new predictions through the native calibration path
+
+---
+
 ## [0.9.3] - 2026-06-23
 
 ### Changed

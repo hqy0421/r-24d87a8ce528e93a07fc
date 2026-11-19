@@ -36,6 +36,8 @@ from typing import Tuple
 import numpy as np
 
 from deel.puncc.api.corrections import bonferroni
+from deel.puncc.api.corrections import fixed_allocation
+from deel.puncc.api.corrections import optimal_bonferroni_allocation
 from deel.puncc.api.utils import alpha_calib_check
 from deel.puncc.api.utils import quantile
 from deel.puncc.api.backend import get_backend, shape2
@@ -275,6 +277,112 @@ class BaseCalibrator:
         )
 
         return np.asarray(residuals_Q)
+
+    def compute_optimal_bonferroni_allocation(
+        self, *, budget: float, weights: Iterable
+    ) -> np.ndarray:
+        """Compute the optimal nominal Bonferroni allocation of a miscoverage
+        budget across multiple outputs, from the unweighted calibration
+        absolute residuals estimated by :meth:`fit`.
+
+        The per-output miscoverage levels are chosen on the exact grid
+        ``k / (n + 1)`` (``n`` being the size of the calibration set and
+        ``k`` an integer between 1 and ``n``) with a sum not exceeding
+        :data:`budget`, so as to minimize the weighted sum of the interval
+        widths in the original units. See
+        :func:`deel.puncc.api.corrections.optimal_bonferroni_allocation` for
+        the full description of the optimization problem.
+
+        .. note::
+
+            The weights only enter the width objective; they do not reweight
+            the calibration scores. The allocation is a *nominal* Bonferroni
+            split of the budget, chosen adaptively from the calibration
+            residuals; no coverage guarantee is claimed beyond the nominal
+            Bonferroni interpretation of the budget.
+
+        :param float budget: nominal miscoverage budget to distribute across
+            the outputs, in the open interval (0, 1).
+        :param Iterable weights: positive business weights of the width
+            objective, one per output.
+
+        :returns: per-output miscoverage levels of the optimal allocation.
+        :rtype: ndarray
+
+        :raises RuntimeError: method called before :meth:`fit`.
+        :raises ValueError: invalid inputs, or budget too small to make all
+            output intervals finite (no finite solution).
+        """
+        if self._residuals is None:
+            raise RuntimeError(
+                "Run `fit` method before calling "
+                + "`compute_optimal_bonferroni_allocation`."
+            )
+
+        b = get_backend(self._residuals)
+        residuals = b.to_numpy(self._residuals)
+
+        return optimal_bonferroni_allocation(
+            residuals=residuals, budget=budget, weights=weights
+        )
+
+    def calibrate_optimal_bonferroni(
+        self,
+        *,
+        budget: float,
+        weights: Iterable,
+        y_pred: Iterable,
+        X: Optional[Iterable] = None,
+    ) -> Tuple[np.ndarray]:
+        """Compute calibrated prediction sets for new examples, driven by the
+        optimal nominal Bonferroni allocation of the miscoverage budget
+        across multiple outputs.
+
+        The optimal per-output levels are first selected on the exact grid
+        ``k / (n + 1)`` by minimizing the weighted sum of the interval widths
+        over the unweighted calibration absolute residuals (see
+        :meth:`compute_optimal_bonferroni_allocation`). The selected levels
+        then drive this native calibrator through the usual
+        :meth:`calibrate` path (exact-rank quantiles of the residuals with an
+        infinite score appended, then :data:`pred_set_func`); no equal-split
+        correction is applied. The quantiles are unweighted: conformity
+        weights are not supported by this entry point.
+
+        .. note::
+
+            The weights only enter the width objective; they do not reweight
+            the calibration scores. The allocation is a *nominal* Bonferroni
+            split of the budget, chosen adaptively from the calibration
+            residuals; no coverage guarantee is claimed beyond the nominal
+            Bonferroni interpretation of the budget.
+
+        :param float budget: nominal miscoverage budget to distribute across
+            the outputs, in the open interval (0, 1).
+        :param Iterable weights: positive business weights of the width
+            objective, one per output.
+        :param Iterable y_pred: predicted values.
+        :param Iterable X: test features, forwarded to :meth:`calibrate`
+            (unused by :class:`BaseCalibrator`).
+
+        :returns: prediction set.
+                  In case of regression, returns (y_lower, y_upper).
+        :rtype: Tuple[ndarray]
+
+        :raises RuntimeError: method called before :meth:`fit`.
+        :raises ValueError: invalid inputs, or budget too small to make all
+            output intervals finite (no finite solution).
+        """
+        alphas = self.compute_optimal_bonferroni_allocation(
+            budget=budget, weights=weights
+        )
+
+        return self.calibrate(
+            alpha=budget,
+            X=X,
+            y_pred=y_pred,
+            weights=None,
+            correction=fixed_allocation(alphas),
+        )
 
     def _update_feature_axis(self, y_pred):
         b = get_backend(y_pred)
